@@ -1,0 +1,4 @@
+include README.md
+recursive-include octoprint_psucontrol_tuya/templates *
+recursive-include octoprint_psucontrol_tuya/static *
+recursive-include octoprint_psucontrol_tuya/translations *

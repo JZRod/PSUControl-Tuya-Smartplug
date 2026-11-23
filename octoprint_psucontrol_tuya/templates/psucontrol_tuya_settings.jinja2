@@ -1,0 +1,60 @@
+<form class="form-horizontal">
+    <h4>Tuya device (local control)</h4>
+
+    <div class="control-group">
+        <label class="control-label">{{ _('Device ID') }}</label>
+        <div class="controls">
+            <input type="text" class="input-block-level" data-bind="value: settings.plugins.psucontrol_tuya.device_id">
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label class="control-label">{{ _('IP address') }}</label>
+        <div class="controls">
+            <input type="text" class="input-block-level" data-bind="value: settings.plugins.psucontrol_tuya.address">
+            <span class="help-block">{{ _('Use a fixed/reserved IP for reliability. "Auto" scans the LAN on every call and is slow.') }}</span>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label class="control-label">{{ _('Local key') }}</label>
+        <div class="controls">
+            <input type="password" class="input-block-level" autocomplete="off" data-bind="value: settings.plugins.psucontrol_tuya.local_key">
+            <span class="help-block">{{ _('Obtain with "python -m tinytuya wizard" (needs a Tuya IoT Cloud account).') }}</span>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label class="control-label">{{ _('Protocol version') }}</label>
+        <div class="controls">
+            <select data-bind="value: settings.plugins.psucontrol_tuya.version">
+                <option value="3.1">3.1</option>
+                <option value="3.3">3.3</option>
+                <option value="3.4">3.4</option>
+                <option value="3.5">3.5</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label class="control-label">{{ _('Switch DPS') }}</label>
+        <div class="controls">
+            <input type="number" min="1" class="input-mini" data-bind="value: settings.plugins.psucontrol_tuya.switch_dps">
+            <span class="help-block">{{ _('Data point of the on/off switch. Usually 1; multi-outlet strips use 1-4.') }}</span>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label class="control-label">{{ _('Timeout (s)') }}</label>
+        <div class="controls">
+            <input type="number" min="1" class="input-mini" data-bind="value: settings.plugins.psucontrol_tuya.timeout">
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label class="control-label">{{ _('Retries') }}</label>
+        <div class="controls">
+            <input type="number" min="0" class="input-mini" data-bind="value: settings.plugins.psucontrol_tuya.retries">
+        </div>
+    </div>
+</form>
