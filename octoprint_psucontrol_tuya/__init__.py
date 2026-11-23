@@ -35,13 +35,15 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
 
     # ---- Startup / registration with PSU Control ------------------------
 
-    def on_startup(self, host, port):
-        helpers = self._plugin_manager.get_helpers("psucontrol")
+    def on_after_startup(self):
+        # Must run after PSU Control has finished its own startup, otherwise
+        # its helpers are not available yet and we never get registered.
+        helpers = self._plugin_manager.get_helpers("psucontrol", "register_plugin")
         if not helpers or "register_plugin" not in helpers:
             self._logger.warning(
-                "The installed version of PSU Control does not support plugin registration.")
+                "PSU Control not found or too old to support sub-plugins; not registering.")
             return
-        self._logger.debug("Registering plugin with PSU Control")
+        self._logger.info("Registering with PSU Control")
         helpers["register_plugin"](self)
 
     # ---- tinytuya helpers -----------------------------------------------
@@ -87,11 +89,11 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
     # ---- PSU Control sub-plugin API -------------------------------------
 
     def turn_psu_on(self):
-        self._logger.debug("Switching PSU on")
+        self._logger.info("Switching PSU on")
         self._set(True)
 
     def turn_psu_off(self):
-        self._logger.debug("Switching PSU off")
+        self._logger.info("Switching PSU off")
         self._set(False)
 
     def get_psu_state(self):
