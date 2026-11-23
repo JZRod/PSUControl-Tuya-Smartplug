@@ -21,7 +21,7 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
             device_id="",
             address="Auto",      # IP address, or "Auto" to scan the LAN (slower)
             local_key="",
-            version="3.3",       # 3.1, 3.3, 3.4 or 3.5
+            version="3.4",       # 3.1, 3.3, 3.4 or 3.5
             switch_dps=1,        # DPS index of the on/off switch (usually 1)
             timeout=5,           # socket timeout in seconds
             retries=2,
@@ -59,15 +59,9 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
         if not dev_id or not key:
             raise ValueError("Tuya device ID and local key must be configured")
 
-        d = self._tinytuya.OutletDevice(
-            dev_id=dev_id,
-            address=s.get(["address"]) or "Auto",
-            local_key=key,
-            version=float(s.get(["version"]) or 3.3),
-        )
-        d.set_socketPersistent(False)
+        d = self._tinytuya.OutletDevice(dev_id, s.get(["address"]) or "Auto", key)
+        d.set_version(float(s.get(["version"]) or 3.4))
         d.set_socketTimeout(float(s.get(["timeout"]) or 5))
-        d.set_socketRetryLimit(int(s.get_int(["retries"]) or 2))
         return d
 
     def _switch(self):
@@ -77,7 +71,8 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
         try:
             with self._lock:
                 d = self._device()
-                result = d.turn_on(switch=self._switch()) if on else d.turn_off(switch=self._switch())
+                result = d.set_status(bool(on), self._switch())
+            self._logger.info("Tuya set_status result: %s", result)
             if isinstance(result, dict) and result.get("Error"):
                 self._logger.error("Tuya error: %s", result)
                 return False
