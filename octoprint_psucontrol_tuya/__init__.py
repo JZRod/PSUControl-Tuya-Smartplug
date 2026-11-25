@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import threading
+import time
 
 import octoprint.plugin
 
@@ -13,6 +14,7 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
     def __init__(self):
         self._lock = threading.Lock()
         self._tinytuya = None
+        self._last_state = False
 
     # ---- Settings -------------------------------------------------------
 
@@ -76,6 +78,7 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
             if isinstance(result, dict) and result.get("Error"):
                 self._logger.error("Tuya error: %s", result)
                 return False
+            self._last_state = bool(on)
             return True
         except Exception:
             self._logger.exception("Failed to switch Tuya plug %s", "on" if on else "off")
@@ -92,20 +95,31 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
         self._set(False)
 
     def get_psu_state(self):
-        try:
-            with self._lock:
-                status = self._device().status()
-            if not isinstance(status, dict) or "dps" not in status:
-                self._logger.error("Unexpected Tuya status response: %s", status)
-                return False
-            dps = status["dps"]
-            value = dps.get(str(self._switch()))
-            if value is None:
-                value = dps.get(self._switch())
-            return bool(value)
-        except Exception:
-            self._logger.exception("Failed to read Tuya plug state")
-            return False
+        """Return the plug's on/off state.
+
+        PSU Control polls this regularly and treats False as "PSU is off",
+        which disconnects the printer. A flaky LAN poll must therefore never
+        be reported as "off": on any failure we return the last known state.
+        """
+        for attempt in range(3):
+            try:
+                with self._lock:
+                    status = self._device().status()
+                if isinstance(status, dict) and isinstance(status.get("dps"), dict):
+                    dps = status["dps"]
+                    value = dps.get(str(self._switch()))
+                    if value is None:
+                        value = dps.get(self._switch())
+                    if value is not None:
+                        self._last_state = bool(value)
+                        return self._last_state
+                self._logger.warning("Tuya status poll failed (attempt %d): %s", attempt + 1, status)
+            except Exception:
+                self._logger.warning("Tuya status poll raised (attempt %d)", attempt + 1, exc_info=True)
+            time.sleep(0.5)
+
+        self._logger.warning("Tuya plug unreachable, keeping last known state: %s", self._last_state)
+        return self._last_state
 
     # ---- Update info ----------------------------------------------------
 
