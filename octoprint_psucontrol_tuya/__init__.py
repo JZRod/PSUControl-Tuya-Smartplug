@@ -15,6 +15,9 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
         self._lock = threading.Lock()
         self._tinytuya = None
         self._last_state = False
+        self._last_state_known = False
+        self._fail_streak = 0          # consecutive failed polls (after retries)
+        self._fail_since = None        # time.time() of first failure in streak
 
     # ---- Settings -------------------------------------------------------
 
@@ -37,7 +40,25 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
 
     # ---- Startup / registration with PSU Control ------------------------
 
+    def _describe_config(self):
+        s = self._settings
+        dev_id = s.get(["device_id"]) or ""
+        masked = (dev_id[:4] + "..." + dev_id[-4:]) if len(dev_id) > 8 else (dev_id or "<unset>")
+        return "device_id=%s address=%s version=%s dps=%s timeout=%ss key_set=%s" % (
+            masked, s.get(["address"]) or "Auto", s.get(["version"]),
+            s.get(["switch_dps"]), s.get(["timeout"]), bool(s.get(["local_key"])))
+
+    def on_settings_save(self, data):
+        octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
+        self._logger.info("Settings saved: %s", self._describe_config())
+
     def on_after_startup(self):
+        try:
+            import tinytuya
+            self._logger.info("tinytuya %s", getattr(tinytuya, "__version__", "unknown"))
+        except Exception:
+            self._logger.error("tinytuya is not importable - plugin cannot work", exc_info=True)
+        self._logger.info("Config: %s", self._describe_config())
         # Must run after PSU Control has finished its own startup, otherwise
         # its helpers are not available yet and we never get registered.
         helpers = self._plugin_manager.get_helpers("psucontrol", "register_plugin")
@@ -70,19 +91,30 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
         return int(self._settings.get_int(["switch_dps"]) or 1)
 
     def _set(self, on):
+        label = "on" if on else "off"
+        t0 = time.time()
         try:
             with self._lock:
                 d = self._device()
                 result = d.set_status(bool(on), self._switch())
-            self._logger.info("Tuya set_status result: %s", result)
-            if isinstance(result, dict) and result.get("Error"):
-                self._logger.error("Tuya error: %s", result)
+            ms = int((time.time() - t0) * 1000)
+            if isinstance(result, dict) and (result.get("Error") or result.get("Err")):
+                self._logger.error("Switch %s FAILED after %dms: %s", label, ms, result)
                 return False
-            self._last_state = bool(on)
+            self._logger.info("Switch %s OK in %dms, response: %s", label, ms, result)
+            self._note_state(bool(on), source="command")
             return True
         except Exception:
-            self._logger.exception("Failed to switch Tuya plug %s", "on" if on else "off")
+            self._logger.exception("Switch %s raised after %dms", label, int((time.time() - t0) * 1000))
             return False
+
+    def _note_state(self, state, source):
+        """Record state and log transitions."""
+        if self._last_state_known and state != self._last_state:
+            self._logger.info("PSU state changed: %s -> %s (via %s)",
+                              "on" if self._last_state else "off", "on" if state else "off", source)
+        self._last_state = state
+        self._last_state_known = True
 
     # ---- PSU Control sub-plugin API -------------------------------------
 
@@ -101,7 +133,9 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
         which disconnects the printer. A flaky LAN poll must therefore never
         be reported as "off": on any failure we return the last known state.
         """
-        for attempt in range(3):
+        last_problem = None
+        t0 = time.time()
+        for attempt in range(1, 4):
             try:
                 with self._lock:
                     status = self._device().status()
@@ -111,14 +145,33 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
                     if value is None:
                         value = dps.get(self._switch())
                     if value is not None:
-                        self._last_state = bool(value)
+                        ms = int((time.time() - t0) * 1000)
+                        if self._fail_streak:
+                            self._logger.info(
+                                "Plug reachable again after %d failed poll(s) over %ds (attempt %d, %dms)",
+                                self._fail_streak, int(time.time() - self._fail_since), attempt, ms)
+                        self._fail_streak = 0
+                        self._fail_since = None
+                        self._logger.debug("Poll OK in %dms (attempt %d): dps=%s", ms, attempt, dps)
+                        self._note_state(bool(value), source="poll")
                         return self._last_state
-                self._logger.warning("Tuya status poll failed (attempt %d): %s", attempt + 1, status)
-            except Exception:
-                self._logger.warning("Tuya status poll raised (attempt %d)", attempt + 1, exc_info=True)
+                last_problem = "unexpected response: %r" % (status,)
+            except Exception as e:
+                last_problem = "%s: %s" % (type(e).__name__, e)
+            self._logger.debug("Poll attempt %d/3 failed: %s", attempt, last_problem)
             time.sleep(0.5)
 
-        self._logger.warning("Tuya plug unreachable, keeping last known state: %s", self._last_state)
+        # All attempts failed: keep last known state, log with rate limiting
+        # (first failure, then every 10th) so a dead plug doesn't flood the log.
+        if self._fail_streak == 0:
+            self._fail_since = time.time()
+        self._fail_streak += 1
+        if self._fail_streak == 1 or self._fail_streak % 10 == 0:
+            self._logger.warning(
+                "Plug did not answer (failed poll #%d in a row, %ds so far, last error: %s). "
+                "Reporting last known state: %s",
+                self._fail_streak, int(time.time() - self._fail_since), last_problem,
+                ("on" if self._last_state else "off") if self._last_state_known else "off (never read)")
         return self._last_state
 
     # ---- Update info ----------------------------------------------------
