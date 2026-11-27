@@ -1,6 +1,7 @@
 # coding=utf-8
 from __future__ import absolute_import
 
+import logging
 import threading
 import time
 
@@ -30,6 +31,7 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
             switch_dps=1,        # DPS index of the on/off switch (usually 1)
             timeout=5,           # socket timeout in seconds
             retries=2,
+            debug_logging=False,  # log every poll/retry at DEBUG level
         )
 
     def get_settings_version(self):
@@ -48,8 +50,20 @@ class PSUControlTuya(octoprint.plugin.StartupPlugin,
             masked, s.get(["address"]) or "Auto", s.get(["version"]),
             s.get(["switch_dps"]), s.get(["timeout"]), bool(s.get(["local_key"])))
 
+    def _apply_log_level(self):
+        """Raise this plugin's logger to DEBUG when the option is enabled."""
+        if self._settings.get_boolean(["debug_logging"]):
+            self._logger.setLevel(logging.DEBUG)
+            self._logger.info("Debug logging enabled")
+        else:
+            self._logger.setLevel(logging.NOTSET)  # inherit OctoPrint's level
+
+    def on_settings_initialized(self):
+        self._apply_log_level()
+
     def on_settings_save(self, data):
         octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
+        self._apply_log_level()
         self._logger.info("Settings saved: %s", self._describe_config())
 
     def on_after_startup(self):
