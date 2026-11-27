@@ -4,7 +4,7 @@ import setuptools
 plugin_identifier = "psucontrol_tuya"
 plugin_package = "octoprint_psucontrol_tuya"
 plugin_name = "OctoPrint-PSUControl-Tuya"
-plugin_version = "0.1.0"
+plugin_version = "0.1.1"
 plugin_description = "Adds Tuya smart plug support to OctoPrint-PSUControl using tinytuya (local control)."
 plugin_author = "JZRod"
 plugin_author_email = "JZRod@users.noreply.github.com"
